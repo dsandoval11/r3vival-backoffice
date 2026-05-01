@@ -32,6 +32,8 @@ pnpm dev
 
 Open http://localhost:3000 (redirects to `/products`).
 
+Before using the backoffice, log in at `/login` with your email and password (Supabase Auth).
+
 ## Implemented modules
 
 - Products (full CRUD)
@@ -68,4 +70,5 @@ lib/
 ## Notes
 
 - This tool uses the Supabase anon key on the frontend.
+- Most CRUD routes require an authenticated Supabase session (`auth.uid()` present) to satisfy RLS policies.
 - Ensure your Supabase RLS policies allow the required CRUD/storage operations for local admin usage.

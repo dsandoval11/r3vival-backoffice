@@ -78,39 +78,64 @@ export function SimpleEntityListPage({
           No se encontraron registros.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
-          <table className="min-w-full divide-y divide-zinc-200">
-            <thead className="bg-zinc-50">
-              <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
-                <th className="px-4 py-3">Nombre</th>
-                <th className="px-4 py-3">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 text-sm">
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <td className="px-4 py-3 font-medium">{row.name}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Link
-                        href={`${editBaseHref}/${row.id}/edit`}
-                        className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-                      >
-                        Editar
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(row.id)}
-                        className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                      >
-                        Eliminar
-                      </button>
-                    </div>
-                  </td>
+        <div className="space-y-3">
+          <div className="space-y-3 md:hidden">
+            {rows.map((row) => (
+              <article key={row.id} className="rounded-lg border border-zinc-200 bg-white p-4">
+                <p className="text-sm font-medium text-zinc-900">{row.name}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href={`${editBaseHref}/${row.id}/edit`}
+                    className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Editar
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(row.id)}
+                    className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-lg border border-zinc-200 bg-white md:block">
+            <table className="min-w-[420px] divide-y divide-zinc-200">
+              <thead className="bg-zinc-50">
+                <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
+                  <th className="px-4 py-3">Nombre</th>
+                  <th className="px-4 py-3">Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 text-sm">
+                {rows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="px-4 py-3 font-medium">{row.name}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`${editBaseHref}/${row.id}/edit`}
+                          className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                        >
+                          Editar
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(row.id)}
+                          className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

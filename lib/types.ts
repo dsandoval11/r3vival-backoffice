@@ -33,6 +33,8 @@ export interface ProductListItem {
   id: Id;
   name: string;
   price: number;
+  measurements: string;
+  sizeNames: string[];
   brandName: string;
   subcategoryName: string;
   colorName: string;

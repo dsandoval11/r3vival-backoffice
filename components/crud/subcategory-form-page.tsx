@@ -93,7 +93,7 @@ export function SubcategoryFormPage({ subcategoryId }: SubcategoryFormPageProps)
 
       <form
         onSubmit={(event) => void handleSubmit(event)}
-        className="max-w-xl space-y-4 rounded-lg border border-zinc-200 bg-white p-6"
+        className="max-w-xl space-y-4 rounded-lg border border-zinc-200 bg-white p-4 sm:p-6"
       >
         <FormField htmlFor="name" label="Nombre" required>
           <input
@@ -128,17 +128,17 @@ export function SubcategoryFormPage({ subcategoryId }: SubcategoryFormPageProps)
           </p>
         ) : null}
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {saving ? "Guardando..." : "Guardar"}
           </button>
           <Link
             href="/subcategories"
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+            className="w-full rounded-md border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-700 hover:bg-zinc-100 sm:w-auto"
           >
             Cancelar
           </Link>

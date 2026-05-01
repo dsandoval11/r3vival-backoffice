@@ -45,16 +45,17 @@ async function generateReferenceCode(): Promise<string> {
 export async function fetchProducts(limit = 500) {
   const supabase = getSupabaseClient();
 
-  const [productsResult, lookups, catalogResult] = await Promise.all([
+  const [productsResult, lookups, catalogResult, productSizesResult] = await Promise.all([
     supabase
       .from("products")
       .select(
-        "id,name,sale_price,brand_id,subcategory_id,color_id,condition_id,reference_code",
+        "id,name,sale_price,brand_id,subcategory_id,color_id,condition_id,reference_code,measurements",
       )
       .order("reference_code", { ascending: true, nullsFirst: false })
       .limit(limit),
     fetchProductLookups(),
     supabase.from("catalog").select("product_id"),
+    supabase.from("product_size").select("product_id,size_id"),
   ]);
 
   if (productsResult.error) {
@@ -65,13 +66,37 @@ export async function fetchProducts(limit = 500) {
     throw new Error(catalogResult.error.message);
   }
 
+  if (productSizesResult.error) {
+    throw new Error(productSizesResult.error.message);
+  }
+
   const brandNameById = new Map(lookups.brands.map((b) => [b.id, b.name]));
   const subcategoryNameById = new Map(lookups.subcategories.map((s) => [s.id, s.name]));
   const colorNameById = new Map(lookups.colors.map((c) => [c.id, c.name]));
   const conditionNameById = new Map(lookups.conditions.map((c) => [c.id, c.name]));
+  const sizeNameById = new Map(lookups.sizes.map((s) => [s.id, s.name]));
   const catalogProductIds = new Set(
     (catalogResult.data ?? []).map((r) => r.product_id),
   );
+  const sizeNamesByProductId = new Map<string, string[]>();
+  const productSizes = (productSizesResult.data ?? []) as Array<{
+    product_id: string;
+    size_id: string;
+  }>;
+
+  for (const row of productSizes) {
+    const sizeName = sizeNameById.get(row.size_id);
+
+    if (!sizeName) continue;
+
+    const currentSizes = sizeNamesByProductId.get(row.product_id);
+    if (currentSizes) {
+      currentSizes.push(sizeName);
+      continue;
+    }
+
+    sizeNamesByProductId.set(row.product_id, [sizeName]);
+  }
 
   const products = (productsResult.data ?? []) as Product[];
 
@@ -79,6 +104,8 @@ export async function fetchProducts(limit = 500) {
     id: product.id,
     name: product.name,
     price: Number(product.sale_price),
+    measurements: product.measurements ?? "",
+    sizeNames: sizeNamesByProductId.get(product.id) ?? [],
     brandName: brandNameById.get(product.brand_id) ?? "-",
     subcategoryName: subcategoryNameById.get(product.subcategory_id) ?? "-",
     colorName: colorNameById.get(product.color_id) ?? "-",

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ProductsTable } from "@/components/products/products-table";
 import { PageHeader } from "@/components/ui/page-header";
-import { deleteProduct, fetchProducts } from "@/lib/services/products";
+import { fetchProducts } from "@/lib/services/products";
 import type { ProductListItem } from "@/lib/types";
 
 const PAGE_SIZE = 25;
@@ -37,23 +37,6 @@ export function ProductsListPage() {
     void loadProducts();
   }, [loadProducts]);
 
-  async function handleDelete(productId: string) {
-    const confirmed = window.confirm("¿Eliminar este producto?");
-
-    if (!confirmed) return;
-
-    try {
-      setError(null);
-      await deleteProduct(productId);
-      await loadProducts();
-    } catch (deleteError) {
-      console.error(deleteError);
-      setError(
-        deleteError instanceof Error ? deleteError.message : "Error al eliminar el producto.",
-      );
-    }
-  }
-
   const totalPages = Math.max(1, Math.ceil(products.length / PAGE_SIZE));
   const paginated = products.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
@@ -76,10 +59,10 @@ export function ProductsListPage() {
         <p className="text-sm text-zinc-500">Cargando productos...</p>
       ) : (
         <>
-          <ProductsTable products={paginated} onDelete={handleDelete} />
+          <ProductsTable products={paginated} />
 
           {totalPages > 1 ? (
-            <div className="mt-4 flex items-center justify-between text-sm text-zinc-600">
+            <div className="mt-4 flex flex-col gap-3 text-sm text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
               <span>
                 Página {currentPage} de {totalPages} &mdash; {products.length} productos
               </span>

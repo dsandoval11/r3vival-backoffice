@@ -93,7 +93,7 @@ export function ProductImagesManager({ productId }: ProductImagesManagerProps) {
   }
 
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-6">
+    <section className="rounded-lg border border-zinc-200 bg-white p-4 sm:p-6">
       <h2 className="text-lg font-semibold">Imágenes del producto</h2>
       <p className="mt-1 text-sm text-zinc-600">
         Sube varias imágenes, elige una portada y elimina las que no necesites.
@@ -123,7 +123,7 @@ export function ProductImagesManager({ productId }: ProductImagesManagerProps) {
       {loading ? (
         <p className="mt-4 text-sm text-zinc-500">Cargando imágenes...</p>
       ) : (
-        <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {images.map((image) => (
             <div
               key={image.id}

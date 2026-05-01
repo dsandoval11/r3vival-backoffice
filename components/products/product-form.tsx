@@ -19,6 +19,15 @@ interface ProductFormProps {
   productId?: string;
 }
 
+function normalizePriceInput(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function formatPriceInput(value: string): string {
+  if (!value) return "";
+  return value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
 export function ProductForm({ productId }: ProductFormProps) {
   const router = useRouter();
   const isEditMode = Boolean(productId);
@@ -43,7 +52,11 @@ export function ProductForm({ productId }: ProductFormProps) {
 
         setLookups(lookupRows);
         if (productResult) {
-          setFormValues(productResult.values);
+          setFormValues({
+            ...productResult.values,
+            price: normalizePriceInput(productResult.values.price),
+            purchase_price: normalizePriceInput(productResult.values.purchase_price),
+          });
           setReferenceCode(productResult.referenceCode);
         } else {
           setFormValues(EMPTY_PRODUCT_FORM_VALUES);
@@ -127,11 +140,11 @@ export function ProductForm({ productId }: ProductFormProps) {
 
       <form
         onSubmit={(event) => void handleSubmit(event)}
-        className="space-y-6 rounded-lg border border-zinc-200 bg-white p-6"
+        className="space-y-6 rounded-lg border border-zinc-200 bg-white p-4 sm:p-6"
       >
         {/* Reference code (edit mode only) */}
         {isEditMode && referenceCode ? (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Referencia:
             </span>
@@ -157,11 +170,12 @@ export function ProductForm({ productId }: ProductFormProps) {
           <FormField htmlFor="price" label="Precio de venta" required>
             <input
               id="price"
-              type="number"
-              min="0"
-              step="1"
-              value={formValues.price}
-              onChange={(event) => updateField("price", event.target.value)}
+              type="text"
+              inputMode="numeric"
+              value={formatPriceInput(formValues.price)}
+              onChange={(event) =>
+                updateField("price", normalizePriceInput(event.target.value))
+              }
               className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
               placeholder="0"
             />
@@ -170,11 +184,12 @@ export function ProductForm({ productId }: ProductFormProps) {
           <FormField htmlFor="purchase_price" label="Precio de compra">
             <input
               id="purchase_price"
-              type="number"
-              min="0"
-              step="1"
-              value={formValues.purchase_price}
-              onChange={(event) => updateField("purchase_price", event.target.value)}
+              type="text"
+              inputMode="numeric"
+              value={formatPriceInput(formValues.purchase_price)}
+              onChange={(event) =>
+                updateField("purchase_price", normalizePriceInput(event.target.value))
+              }
               className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
               placeholder="0"
             />
@@ -343,17 +358,17 @@ export function ProductForm({ productId }: ProductFormProps) {
           </p>
         ) : null}
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {saving ? "Guardando..." : "Guardar producto"}
           </button>
           <Link
             href="/products"
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+            className="w-full rounded-md border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-700 hover:bg-zinc-100 sm:w-auto"
           >
             Volver al listado
           </Link>
