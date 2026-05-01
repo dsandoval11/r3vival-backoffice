@@ -1,0 +1,111 @@
+"use client";
+/* eslint-disable react-hooks/set-state-in-effect */
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+
+import { PageHeader } from "@/components/ui/page-header";
+import { deleteSubcategory, listSubcategories } from "@/lib/services/entities";
+import type { Subcategory } from "@/lib/types";
+
+export function SubcategoryListPage() {
+  const [rows, setRows] = useState<Subcategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadRows = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await listSubcategories();
+      setRows(data);
+    } catch (loadError) {
+      console.error(loadError);
+      setError(
+        loadError instanceof Error ? loadError.message : "Error al cargar las subcategorías.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRows();
+  }, [loadRows]);
+
+  async function handleDelete(id: string) {
+    const confirmed = window.confirm("¿Eliminar esta subcategoría?");
+
+    if (!confirmed) return;
+
+    try {
+      setError(null);
+      await deleteSubcategory(id);
+      await loadRows();
+    } catch (deleteError) {
+      console.error(deleteError);
+      setError(deleteError instanceof Error ? deleteError.message : "Error al eliminar.");
+    }
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Subcategorías"
+        actionLabel="Nueva"
+        actionHref="/subcategories/new"
+      />
+
+      {error ? (
+        <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
+
+      {loading ? (
+        <p className="text-sm text-zinc-500">Cargando...</p>
+      ) : rows.length === 0 ? (
+        <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
+          No se encontraron registros.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+          <table className="min-w-full divide-y divide-zinc-200">
+            <thead className="bg-zinc-50">
+              <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
+                <th className="px-4 py-3">Nombre</th>
+                <th className="px-4 py-3">Categoría</th>
+                <th className="px-4 py-3">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 text-sm">
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td className="px-4 py-3 font-medium">{row.name}</td>
+                  <td className="px-4 py-3">{row.category_name ?? "-"}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/subcategories/${row.id}/edit`}
+                        className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                      >
+                        Editar
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(row.id)}
+                        className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

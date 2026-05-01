@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# R3vival Backoffice
 
-## Getting Started
+Internal desktop-first admin panel for managing second-hand clothing inventory and catalog data.
 
-First, run the development server:
+## Tech stack
+
+- Next.js (App Router) + TypeScript
+- Supabase (database + storage)
+- TailwindCSS
+
+## Required environment variables
+
+Create `.env.local` with:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+NEXT_PUBLIC_SUPABASE_URL=your-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Optional (defaults to `product-images`):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+NEXT_PUBLIC_SUPABASE_PRODUCT_IMAGES_BUCKET=product-images
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Run locally
 
-## Learn More
+```bash
+pnpm install
+pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Open http://localhost:3000 (redirects to `/products`).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Implemented modules
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Products (full CRUD)
+  - name, price, brand, subcategory, color, condition
+  - catalog visibility toggle (`catalog` table sync)
+  - image upload/delete/cover selection (`product_images` + Supabase Storage)
+- Brands (CRUD)
+- Categories (CRUD)
+- Subcategories (CRUD, with required category)
+- Colors (CRUD)
+- Conditions (CRUD)
 
-## Deploy on Vercel
+## Project structure
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```text
+app/
+  products/
+  brands/
+  categories/
+  subcategories/
+  colors/
+  conditions/
+components/
+  layout/
+  products/
+  crud/
+  ui/
+lib/
+  supabase/
+  services/
+  utils/
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Notes
+
+- This tool uses the Supabase anon key on the frontend.
+- Ensure your Supabase RLS policies allow the required CRUD/storage operations for local admin usage.
