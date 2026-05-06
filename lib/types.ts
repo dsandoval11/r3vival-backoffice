@@ -64,6 +64,7 @@ export interface ProductImage {
   product_id: Id;
   image_url: string;
   is_cover: boolean;
+  cloudinary_public_id?: string | null;
 }
 
 export interface ProductLookups {

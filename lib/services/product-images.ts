@@ -1,11 +1,44 @@
 import { PRODUCT_IMAGES_BUCKET } from "@/lib/config";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Id, ProductImage } from "@/lib/types";
-import {
-  getStoragePathFromPublicUrl,
-  sanitizeFileName,
-} from "@/lib/utils/storage";
+import { getStoragePathFromPublicUrl } from "@/lib/utils/storage";
 import { requireId } from "@/lib/utils/validation";
+
+const CLOUDINARY_UPLOAD_BASE = "https://api.cloudinary.com/v1_1";
+
+async function getCloudinarySignature(folder: string) {
+  const res = await fetch("/api/cloudinary/sign", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ folder }),
+  });
+
+  if (!res.ok) {
+    const body = (await res.json()) as { error?: string };
+    throw new Error(body.error ?? "Failed to get Cloudinary signature");
+  }
+
+  return res.json() as Promise<{
+    signature: string;
+    timestamp: number;
+    apiKey: string;
+    cloudName: string;
+    folder: string;
+  }>;
+}
+
+async function deleteCloudinaryAsset(publicId: string) {
+  const res = await fetch("/api/cloudinary/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ publicId }),
+  });
+
+  if (!res.ok) {
+    const body = (await res.json()) as { error?: string };
+    throw new Error(body.error ?? "Failed to delete Cloudinary asset");
+  }
+}
 
 export async function fetchProductImages(productId: Id) {
   requireId(productId, "Product");
@@ -13,7 +46,7 @@ export async function fetchProductImages(productId: Id) {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("product_images")
-    .select("id,product_id,image_url,is_cover")
+    .select("id,product_id,image_url,is_cover,cloudinary_public_id")
     .eq("product_id", productId)
     .order("is_cover", { ascending: false });
 
@@ -36,25 +69,32 @@ export async function uploadProductImages(productId: Id, files: File[]) {
   const hasCoverImage = currentImages.some((image) => image.is_cover);
   const uploadedRows: ProductImage[] = [];
 
+  const folder = `r3vival/products/${productId}`;
+  const { signature, timestamp, apiKey, cloudName } =
+    await getCloudinarySignature(folder);
+
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
-    const filePath = `${productId}/${Date.now()}-${index}-${sanitizeFileName(
-      file.name,
-    )}`;
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("api_key", apiKey);
+    formData.append("timestamp", String(timestamp));
+    formData.append("signature", signature);
+    formData.append("folder", folder);
 
-    const { error: uploadError } = await supabase.storage
-      .from(PRODUCT_IMAGES_BUCKET)
-      .upload(filePath, file, {
-        upsert: false,
-      });
+    const uploadRes = await fetch(
+      `${CLOUDINARY_UPLOAD_BASE}/${cloudName}/image/upload`,
+      { method: "POST", body: formData },
+    );
 
-    if (uploadError) {
-      throw new Error(uploadError.message);
+    if (!uploadRes.ok) {
+      throw new Error(`Cloudinary upload failed: ${uploadRes.statusText}`);
     }
 
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from(PRODUCT_IMAGES_BUCKET).getPublicUrl(filePath);
+    const { secure_url, public_id } = (await uploadRes.json()) as {
+      secure_url: string;
+      public_id: string;
+    };
 
     const shouldBeCover = !hasCoverImage && index === 0;
 
@@ -62,10 +102,11 @@ export async function uploadProductImages(productId: Id, files: File[]) {
       .from("product_images")
       .insert({
         product_id: productId,
-        image_url: publicUrl,
+        image_url: secure_url,
+        cloudinary_public_id: public_id,
         is_cover: shouldBeCover,
       })
-      .select("id,product_id,image_url,is_cover")
+      .select("id,product_id,image_url,is_cover,cloudinary_public_id")
       .single();
 
     if (error) {
@@ -106,18 +147,23 @@ export async function setProductCoverImage(productId: Id, imageId: Id) {
 
 export async function deleteProductImage(image: ProductImage) {
   const supabase = getSupabaseClient();
-  const imagePath = getStoragePathFromPublicUrl(
-    image.image_url,
-    PRODUCT_IMAGES_BUCKET,
-  );
 
-  if (imagePath) {
-    const { error: storageError } = await supabase.storage
-      .from(PRODUCT_IMAGES_BUCKET)
-      .remove([imagePath]);
+  if (image.cloudinary_public_id) {
+    await deleteCloudinaryAsset(image.cloudinary_public_id);
+  } else {
+    const imagePath = getStoragePathFromPublicUrl(
+      image.image_url,
+      PRODUCT_IMAGES_BUCKET,
+    );
 
-    if (storageError) {
-      throw new Error(storageError.message);
+    if (imagePath) {
+      const { error: storageError } = await supabase.storage
+        .from(PRODUCT_IMAGES_BUCKET)
+        .remove([imagePath]);
+
+      if (storageError) {
+        throw new Error(storageError.message);
+      }
     }
   }
 
@@ -145,16 +191,23 @@ export async function deleteAllProductImages(productId: Id) {
 
   const supabase = getSupabaseClient();
   const images = await fetchProductImages(productId);
-  const removablePaths = images
-    .map((image) =>
-      getStoragePathFromPublicUrl(image.image_url, PRODUCT_IMAGES_BUCKET),
+
+  const cloudinaryIds = images
+    .map((img) => img.cloudinary_public_id)
+    .filter((id): id is string => Boolean(id));
+
+  await Promise.all(cloudinaryIds.map(deleteCloudinaryAsset));
+
+  const storagePaths = images
+    .map((img) =>
+      getStoragePathFromPublicUrl(img.image_url, PRODUCT_IMAGES_BUCKET),
     )
     .filter((path): path is string => Boolean(path));
 
-  if (removablePaths.length > 0) {
+  if (storagePaths.length > 0) {
     const { error: storageError } = await supabase.storage
       .from(PRODUCT_IMAGES_BUCKET)
-      .remove(removablePaths);
+      .remove(storagePaths);
 
     if (storageError) {
       throw new Error(storageError.message);

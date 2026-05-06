@@ -74,8 +74,10 @@ Focus on simplicity, speed, and usability.
 
 ## Images Handling
 
-- Upload images to Supabase Storage
-- Save public URL in `product_images`
+- Upload images to Cloudinary via signed upload (`/api/cloudinary/sign`)
+- Save `secure_url` as `image_url` and `public_id` as `cloudinary_public_id` in `product_images`
+- Delete assets via `/api/cloudinary/delete` (server-side, needs secret)
+- Legacy rows without `cloudinary_public_id` are on Supabase Storage — both delete paths are supported
 - Ensure:
   - Only one `is_cover = true` per product
 - Allow reordering (optional but valuable)
