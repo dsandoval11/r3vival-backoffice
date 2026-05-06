@@ -1,6 +1,7 @@
 import { PRODUCT_IMAGES_BUCKET } from "@/lib/config";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Id, ProductImage } from "@/lib/types";
+import { processImageForUpload } from "@/lib/utils/image-compress";
 import { getStoragePathFromPublicUrl } from "@/lib/utils/storage";
 import { requireId } from "@/lib/utils/validation";
 
@@ -74,7 +75,7 @@ export async function uploadProductImages(productId: Id, files: File[]) {
     await getCloudinarySignature(folder);
 
   for (let index = 0; index < files.length; index += 1) {
-    const file = files[index];
+    const file = await processImageForUpload(files[index]);
     const formData = new FormData();
     formData.append("file", file);
     formData.append("api_key", apiKey);

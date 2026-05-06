@@ -103,7 +103,7 @@ export function ProductImagesManager({ productId }: ProductImagesManagerProps) {
         <input
           type="file"
           multiple
-          accept="image/*"
+          accept="image/*,.heic,.heif,image/heic,image/heif"
           onChange={(event) => void handleFileUpload(event.target.files)}
           className="block w-full text-sm text-zinc-600 file:mr-4 file:rounded-md file:border-0 file:bg-zinc-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-zinc-800"
           disabled={uploading}
