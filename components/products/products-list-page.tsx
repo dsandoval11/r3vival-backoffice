@@ -1,18 +1,14 @@
 "use client";
-/* eslint-disable react-hooks/set-state-in-effect */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ProductsTable } from "@/components/products/products-table";
 import { PageHeader } from "@/components/ui/page-header";
-import { fetchProducts } from "@/lib/services/products";
-import type { ProductListItem } from "@/lib/types";
+import { fetchProducts, type ProductFilters } from "@/lib/services/products";
+import { fetchProductLookups } from "@/lib/services/reference-data";
+import type { NamedEntity, ProductListItem } from "@/lib/types";
 
 const PAGE_SIZE = 25;
-
-function normalizeText(value: string): string {
-  return value.trim().toLowerCase();
-}
 
 function parsePriceFilter(value: string): number | null {
   if (!value.trim()) return null;
@@ -22,155 +18,133 @@ function parsePriceFilter(value: string): number | null {
 
 export function ProductsListPage() {
   const [products, setProducts] = useState<ProductListItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
+
   const [search, setSearch] = useState("");
   const [referenceFilter, setReferenceFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
-  const [brandFilter, setBrandFilter] = useState("");
-  const [subcategoryFilter, setSubcategoryFilter] = useState("");
-  const [colorFilter, setColorFilter] = useState("");
-  const [conditionFilter, setConditionFilter] = useState("");
+  const [brandIdFilter, setBrandIdFilter] = useState("");
+  const [subcategoryIdFilter, setSubcategoryIdFilter] = useState("");
+  const [colorIdFilter, setColorIdFilter] = useState("");
+  const [conditionIdFilter, setConditionIdFilter] = useState("");
   const [catalogFilter, setCatalogFilter] = useState<"all" | "visible" | "hidden">("all");
   const [minPriceFilter, setMinPriceFilter] = useState("");
   const [maxPriceFilter, setMaxPriceFilter] = useState("");
 
-  const loadProducts = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const rows = await fetchProducts();
-      setProducts(rows);
+  const [debouncedTextFilters, setDebouncedTextFilters] = useState({
+    search: "",
+    reference: "",
+    name: "",
+    minPrice: "",
+    maxPrice: "",
+  });
+
+  const [brands, setBrands] = useState<NamedEntity[]>([]);
+  const [subcategories, setSubcategories] = useState<NamedEntity[]>([]);
+  const [colors, setColors] = useState<NamedEntity[]>([]);
+  const [conditions, setConditions] = useState<NamedEntity[]>([]);
+  const [lookupsLoading, setLookupsLoading] = useState(false);
+  const lookupsLoaded = useRef(false);
+
+  useEffect(() => {
+    if (!filtersOpen || lookupsLoaded.current) return;
+    lookupsLoaded.current = true;
+    setLookupsLoading(true);
+    fetchProductLookups()
+      .then((lookups) => {
+        setBrands(lookups.brands);
+        setSubcategories(lookups.subcategories);
+        setColors(lookups.colors);
+        setConditions(lookups.conditions);
+      })
+      .catch(console.error)
+      .finally(() => setLookupsLoading(false));
+  }, [filtersOpen]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedTextFilters({
+        search,
+        reference: referenceFilter,
+        name: nameFilter,
+        minPrice: minPriceFilter,
+        maxPrice: maxPriceFilter,
+      });
       setCurrentPage(1);
-    } catch (loadError) {
-      console.error(loadError);
-      setError(
-        loadError instanceof Error ? loadError.message : "Error al cargar los productos.",
-      );
-    } finally {
-      setLoading(false);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search, referenceFilter, nameFilter, minPriceFilter, maxPriceFilter]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const filters: ProductFilters = {
+          search: debouncedTextFilters.search || undefined,
+          reference: debouncedTextFilters.reference || undefined,
+          name: debouncedTextFilters.name || undefined,
+          brand_id: brandIdFilter || undefined,
+          subcategory_id: subcategoryIdFilter || undefined,
+          color_id: colorIdFilter || undefined,
+          condition_id: conditionIdFilter || undefined,
+          catalog: catalogFilter === "all" ? undefined : catalogFilter,
+          minPrice: parsePriceFilter(debouncedTextFilters.minPrice),
+          maxPrice: parsePriceFilter(debouncedTextFilters.maxPrice),
+        };
+
+        const { items, total: fetchedTotal } = await fetchProducts(currentPage, PAGE_SIZE, filters);
+
+        if (!cancelled) {
+          setProducts(items);
+          setTotal(fetchedTotal);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          console.error(loadError);
+          setError(
+            loadError instanceof Error ? loadError.message : "Error al cargar los productos.",
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-  }, []);
 
-  useEffect(() => {
-    void loadProducts();
-  }, [loadProducts]);
-
-  const brandOptions = useMemo(
-    () =>
-      Array.from(new Set(products.map((product) => product.brandName))).sort((a, b) =>
-        a.localeCompare(b, "es"),
-      ),
-    [products],
-  );
-  const subcategoryOptions = useMemo(
-    () =>
-      Array.from(new Set(products.map((product) => product.subcategoryName))).sort((a, b) =>
-        a.localeCompare(b, "es"),
-      ),
-    [products],
-  );
-  const colorOptions = useMemo(
-    () =>
-      Array.from(new Set(products.map((product) => product.colorName))).sort((a, b) =>
-        a.localeCompare(b, "es"),
-      ),
-    [products],
-  );
-  const conditionOptions = useMemo(
-    () =>
-      Array.from(new Set(products.map((product) => product.conditionName))).sort((a, b) =>
-        a.localeCompare(b, "es"),
-      ),
-    [products],
-  );
-
-  const filteredProducts = useMemo(() => {
-    const normalizedSearch = normalizeText(search);
-    const normalizedReference = normalizeText(referenceFilter);
-    const normalizedName = normalizeText(nameFilter);
-    const minPrice = parsePriceFilter(minPriceFilter);
-    const maxPrice = parsePriceFilter(maxPriceFilter);
-
-    return products.filter((product) => {
-      if (normalizedSearch) {
-        const matchesSearch = [
-          product.referenceCode,
-          product.name,
-          product.brandName,
-          product.subcategoryName,
-          product.colorName,
-          product.conditionName,
-          product.visibleInCatalog ? "visible" : "oculto",
-          String(Math.round(product.price)),
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedSearch);
-
-        if (!matchesSearch) return false;
-      }
-
-      if (
-        normalizedReference &&
-        !product.referenceCode.toLowerCase().includes(normalizedReference)
-      ) {
-        return false;
-      }
-
-      if (normalizedName && !product.name.toLowerCase().includes(normalizedName)) {
-        return false;
-      }
-
-      if (brandFilter && product.brandName !== brandFilter) return false;
-      if (subcategoryFilter && product.subcategoryName !== subcategoryFilter) return false;
-      if (colorFilter && product.colorName !== colorFilter) return false;
-      if (conditionFilter && product.conditionName !== conditionFilter) return false;
-
-      if (catalogFilter === "visible" && !product.visibleInCatalog) return false;
-      if (catalogFilter === "hidden" && product.visibleInCatalog) return false;
-
-      if (minPrice != null && product.price < minPrice) return false;
-      if (maxPrice != null && product.price > maxPrice) return false;
-
-      return true;
-    });
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [
-    brandFilter,
+    currentPage,
+    debouncedTextFilters,
+    brandIdFilter,
+    subcategoryIdFilter,
+    colorIdFilter,
+    conditionIdFilter,
     catalogFilter,
-    colorFilter,
-    conditionFilter,
-    maxPriceFilter,
-    minPriceFilter,
-    nameFilter,
-    products,
-    referenceFilter,
-    search,
-    subcategoryFilter,
   ]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [
-    search,
-    referenceFilter,
-    nameFilter,
-    brandFilter,
-    subcategoryFilter,
-    colorFilter,
-    conditionFilter,
-    catalogFilter,
-    minPriceFilter,
-    maxPriceFilter,
-  ]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
-  const paginated = filteredProducts.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
-  );
+  const activeFilterCount = [
+    debouncedTextFilters.reference,
+    debouncedTextFilters.name,
+    brandIdFilter,
+    subcategoryIdFilter,
+    colorIdFilter,
+    conditionIdFilter,
+    debouncedTextFilters.minPrice,
+    debouncedTextFilters.maxPrice,
+    catalogFilter !== "all" ? catalogFilter : "",
+  ].filter(Boolean).length;
 
   return (
     <div>
@@ -187,7 +161,7 @@ export function ProductsListPage() {
         </p>
       ) : null}
 
-      {loading ? (
+      {loading && products.length === 0 ? (
         <p className="text-sm text-zinc-500">Cargando productos...</p>
       ) : (
         <>
@@ -198,7 +172,7 @@ export function ProductsListPage() {
                 type="text"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar por nombre, ref, marca, color, condición, precio..."
+                placeholder="Buscar por nombre o referencia..."
                 className="min-w-0 flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
               />
               <button
@@ -221,31 +195,9 @@ export function ProductsListPage() {
                   <path d="m6 9 6 6 6-6" />
                 </svg>
                 Filtros
-                {[
-                  referenceFilter,
-                  nameFilter,
-                  brandFilter,
-                  subcategoryFilter,
-                  colorFilter,
-                  conditionFilter,
-                  minPriceFilter,
-                  maxPriceFilter,
-                  catalogFilter !== "all" ? catalogFilter : "",
-                ].filter(Boolean).length > 0 ? (
+                {activeFilterCount > 0 ? (
                   <span className="rounded-full bg-zinc-900 px-1.5 py-0.5 text-xs leading-none text-white">
-                    {
-                      [
-                        referenceFilter,
-                        nameFilter,
-                        brandFilter,
-                        subcategoryFilter,
-                        colorFilter,
-                        conditionFilter,
-                        minPriceFilter,
-                        maxPriceFilter,
-                        catalogFilter !== "all" ? catalogFilter : "",
-                      ].filter(Boolean).length
-                    }
+                    {activeFilterCount}
                   </span>
                 ) : null}
               </button>
@@ -295,14 +247,17 @@ export function ProductsListPage() {
                     </label>
                     <select
                       id="filter-brand"
-                      value={brandFilter}
-                      onChange={(event) => setBrandFilter(event.target.value)}
+                      value={brandIdFilter}
+                      onChange={(event) => {
+                        setBrandIdFilter(event.target.value);
+                        setCurrentPage(1);
+                      }}
                       className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
                     >
-                      <option value="">Todas</option>
-                      {brandOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
+                      <option value="">{lookupsLoading ? "Cargando..." : "Todas"}</option>
+                      {brands.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
                         </option>
                       ))}
                     </select>
@@ -317,14 +272,17 @@ export function ProductsListPage() {
                     </label>
                     <select
                       id="filter-subcategory"
-                      value={subcategoryFilter}
-                      onChange={(event) => setSubcategoryFilter(event.target.value)}
+                      value={subcategoryIdFilter}
+                      onChange={(event) => {
+                        setSubcategoryIdFilter(event.target.value);
+                        setCurrentPage(1);
+                      }}
                       className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
                     >
-                      <option value="">Todas</option>
-                      {subcategoryOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
+                      <option value="">{lookupsLoading ? "Cargando..." : "Todas"}</option>
+                      {subcategories.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
                         </option>
                       ))}
                     </select>
@@ -339,14 +297,17 @@ export function ProductsListPage() {
                     </label>
                     <select
                       id="filter-color"
-                      value={colorFilter}
-                      onChange={(event) => setColorFilter(event.target.value)}
+                      value={colorIdFilter}
+                      onChange={(event) => {
+                        setColorIdFilter(event.target.value);
+                        setCurrentPage(1);
+                      }}
                       className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
                     >
-                      <option value="">Todos</option>
-                      {colorOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
+                      <option value="">{lookupsLoading ? "Cargando..." : "Todos"}</option>
+                      {colors.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
                         </option>
                       ))}
                     </select>
@@ -361,14 +322,17 @@ export function ProductsListPage() {
                     </label>
                     <select
                       id="filter-condition"
-                      value={conditionFilter}
-                      onChange={(event) => setConditionFilter(event.target.value)}
+                      value={conditionIdFilter}
+                      onChange={(event) => {
+                        setConditionIdFilter(event.target.value);
+                        setCurrentPage(1);
+                      }}
                       className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
                     >
-                      <option value="">Todas</option>
-                      {conditionOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
+                      <option value="">{lookupsLoading ? "Cargando..." : "Todas"}</option>
+                      {conditions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
                         </option>
                       ))}
                     </select>
@@ -418,9 +382,10 @@ export function ProductsListPage() {
                     <select
                       id="filter-catalog"
                       value={catalogFilter}
-                      onChange={(event) =>
-                        setCatalogFilter(event.target.value as "all" | "visible" | "hidden")
-                      }
+                      onChange={(event) => {
+                        setCatalogFilter(event.target.value as "all" | "visible" | "hidden");
+                        setCurrentPage(1);
+                      }}
                       className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
                     >
                       <option value="all">Todos</option>
@@ -433,12 +398,38 @@ export function ProductsListPage() {
             ) : null}
           </section>
 
-          <ProductsTable products={paginated} />
+          <div className="relative">
+            {loading ? (
+              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/60">
+                <svg
+                  className="h-6 w-6 animate-spin text-zinc-400"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
+                </svg>
+              </div>
+            ) : null}
+            <ProductsTable products={products} />
+          </div>
 
-          {totalPages > 1 ? (
+          {totalPages > 1 || total > 0 ? (
             <div className="mt-4 flex flex-col gap-3 text-sm text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
               <span>
-                Página {currentPage} de {totalPages} &mdash; {filteredProducts.length} productos
+                Página {currentPage} de {totalPages} &mdash; {total} productos
               </span>
               <div className="flex items-center gap-2">
                 <button

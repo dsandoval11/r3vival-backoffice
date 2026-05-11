@@ -42,77 +42,123 @@ async function generateReferenceCode(): Promise<string> {
   return String(maxNumber + 1).padStart(4, "0");
 }
 
-export async function fetchProducts(limit = 500) {
+export interface ProductFilters {
+  search?: string;
+  reference?: string;
+  name?: string;
+  brand_id?: string;
+  subcategory_id?: string;
+  color_id?: string;
+  condition_id?: string;
+  catalog?: "visible" | "hidden";
+  minPrice?: number | null;
+  maxPrice?: number | null;
+}
+
+export async function fetchProducts(
+  page = 1,
+  pageSize = 25,
+  filters: ProductFilters = {},
+): Promise<{ items: ProductListItem[]; total: number }> {
   const supabase = getSupabaseClient();
 
-  const [productsResult, lookups, catalogResult, productSizesResult] = await Promise.all([
-    supabase
-      .from("products")
-      .select(
-        "id,name,sale_price,brand_id,subcategory_id,color_id,condition_id,reference_code,measurements",
-      )
-      .order("reference_code", { ascending: true, nullsFirst: false })
-      .limit(limit),
+  let catalogIds: string[] | null = null;
+  if (filters.catalog) {
+    const { data: catalogRows, error: catalogError } = await supabase
+      .from("catalog")
+      .select("product_id");
+    if (catalogError) throw new Error(catalogError.message);
+    catalogIds = (catalogRows ?? []).map((r) => r.product_id as string);
+  }
+
+  if (filters.catalog === "visible" && catalogIds?.length === 0) {
+    return { items: [], total: 0 };
+  }
+
+  let query = supabase
+    .from("products")
+    .select(
+      "id,name,sale_price,brand_id,subcategory_id,color_id,condition_id,reference_code,measurements",
+      { count: "exact" },
+    )
+    .order("reference_code", { ascending: true, nullsFirst: false });
+
+  if (filters.search) {
+    query = query.or(`name.ilike.%${filters.search}%,reference_code.ilike.%${filters.search}%`);
+  }
+  if (filters.reference) query = query.ilike("reference_code", `%${filters.reference}%`);
+  if (filters.name) query = query.ilike("name", `%${filters.name}%`);
+  if (filters.brand_id) query = query.eq("brand_id", filters.brand_id);
+  if (filters.subcategory_id) query = query.eq("subcategory_id", filters.subcategory_id);
+  if (filters.color_id) query = query.eq("color_id", filters.color_id);
+  if (filters.condition_id) query = query.eq("condition_id", filters.condition_id);
+  if (filters.minPrice != null) query = query.gte("sale_price", filters.minPrice);
+  if (filters.maxPrice != null) query = query.lte("sale_price", filters.maxPrice);
+
+  if (filters.catalog === "visible" && catalogIds!.length > 0) {
+    query = query.in("id", catalogIds!);
+  } else if (filters.catalog === "hidden" && catalogIds!.length > 0) {
+    query = query.not("id", "in", `(${catalogIds!.join(",")})`);
+  }
+
+  const from = (page - 1) * pageSize;
+  query = query.range(from, from + pageSize - 1);
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(error.message);
+
+  const products = (data ?? []) as Product[];
+  const productIds = products.map((p) => p.id);
+
+  if (productIds.length === 0) {
+    return { items: [], total: count ?? 0 };
+  }
+
+  const [lookups, catalogForPage, sizesForPage] = await Promise.all([
     fetchProductLookups(),
-    supabase.from("catalog").select("product_id"),
-    supabase.from("product_size").select("product_id,size_id"),
+    supabase.from("catalog").select("product_id").in("product_id", productIds),
+    supabase.from("product_size").select("product_id,size_id").in("product_id", productIds),
   ]);
 
-  if (productsResult.error) {
-    throw new Error(productsResult.error.message);
-  }
-
-  if (catalogResult.error) {
-    throw new Error(catalogResult.error.message);
-  }
-
-  if (productSizesResult.error) {
-    throw new Error(productSizesResult.error.message);
-  }
+  if (catalogForPage.error) throw new Error(catalogForPage.error.message);
+  if (sizesForPage.error) throw new Error(sizesForPage.error.message);
 
   const brandNameById = new Map(lookups.brands.map((b) => [b.id, b.name]));
   const subcategoryNameById = new Map(lookups.subcategories.map((s) => [s.id, s.name]));
   const colorNameById = new Map(lookups.colors.map((c) => [c.id, c.name]));
   const conditionNameById = new Map(lookups.conditions.map((c) => [c.id, c.name]));
   const sizeNameById = new Map(lookups.sizes.map((s) => [s.id, s.name]));
-  const catalogProductIds = new Set(
-    (catalogResult.data ?? []).map((r) => r.product_id),
-  );
+
+  const catalogProductIds = new Set((catalogForPage.data ?? []).map((r) => r.product_id));
+
   const sizeNamesByProductId = new Map<string, string[]>();
-  const productSizes = (productSizesResult.data ?? []) as Array<{
-    product_id: string;
-    size_id: string;
-  }>;
-
-  for (const row of productSizes) {
+  for (const row of (sizesForPage.data ?? []) as Array<{ product_id: string; size_id: string }>) {
     const sizeName = sizeNameById.get(row.size_id);
-
     if (!sizeName) continue;
-
-    const currentSizes = sizeNamesByProductId.get(row.product_id);
-    if (currentSizes) {
-      currentSizes.push(sizeName);
-      continue;
+    const current = sizeNamesByProductId.get(row.product_id);
+    if (current) {
+      current.push(sizeName);
+    } else {
+      sizeNamesByProductId.set(row.product_id, [sizeName]);
     }
-
-    sizeNamesByProductId.set(row.product_id, [sizeName]);
   }
 
-  const products = (productsResult.data ?? []) as Product[];
-
-  return products.map((product) => ({
-    id: product.id,
-    name: product.name,
-    price: Number(product.sale_price),
-    measurements: product.measurements ?? "",
-    sizeNames: sizeNamesByProductId.get(product.id) ?? [],
-    brandName: brandNameById.get(product.brand_id) ?? "-",
-    subcategoryName: subcategoryNameById.get(product.subcategory_id) ?? "-",
-    colorName: colorNameById.get(product.color_id) ?? "-",
-    conditionName: conditionNameById.get(product.condition_id) ?? "-",
-    visibleInCatalog: catalogProductIds.has(product.id),
-    referenceCode: product.reference_code ?? "-",
-  })) as ProductListItem[];
+  return {
+    items: products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      price: Number(product.sale_price),
+      measurements: product.measurements ?? "",
+      sizeNames: sizeNamesByProductId.get(product.id) ?? [],
+      brandName: brandNameById.get(product.brand_id) ?? "-",
+      subcategoryName: subcategoryNameById.get(product.subcategory_id) ?? "-",
+      colorName: colorNameById.get(product.color_id) ?? "-",
+      conditionName: conditionNameById.get(product.condition_id) ?? "-",
+      visibleInCatalog: catalogProductIds.has(product.id),
+      referenceCode: product.reference_code ?? "-",
+    })) as ProductListItem[],
+    total: count ?? 0,
+  };
 }
 
 export async function fetchProductById(productId: Id): Promise<{
