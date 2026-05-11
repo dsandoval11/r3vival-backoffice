@@ -25,6 +25,7 @@ export function ProductsListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [referenceFilter, setReferenceFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
@@ -190,197 +191,246 @@ export function ProductsListPage() {
         <p className="text-sm text-zinc-500">Cargando productos...</p>
       ) : (
         <>
-          <section className="mb-4 rounded-lg border border-zinc-200 bg-white p-4">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <div className="md:col-span-2 xl:col-span-3">
-                <label htmlFor="search" className="mb-1 block text-xs font-medium text-zinc-600">
-                  Buscador general
-                </label>
-                <input
-                  id="search"
-                  type="text"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Buscar por nombre, ref, marca, color, condición, precio..."
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="filter-reference"
-                  className="mb-1 block text-xs font-medium text-zinc-600"
+          <section className="mb-4 rounded-lg border border-zinc-200 bg-white">
+            <div className="flex items-center gap-3 p-4">
+              <input
+                id="search"
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nombre, ref, marca, color, condición, precio..."
+                className="min-w-0 flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((v) => !v)}
+                className="flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`}
                 >
-                  Ref.
-                </label>
-                <input
-                  id="filter-reference"
-                  type="text"
-                  value={referenceFilter}
-                  onChange={(event) => setReferenceFilter(event.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="filter-name"
-                  className="mb-1 block text-xs font-medium text-zinc-600"
-                >
-                  Nombre
-                </label>
-                <input
-                  id="filter-name"
-                  type="text"
-                  value={nameFilter}
-                  onChange={(event) => setNameFilter(event.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="filter-brand"
-                  className="mb-1 block text-xs font-medium text-zinc-600"
-                >
-                  Marca
-                </label>
-                <select
-                  id="filter-brand"
-                  value={brandFilter}
-                  onChange={(event) => setBrandFilter(event.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                >
-                  <option value="">Todas</option>
-                  {brandOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="filter-subcategory"
-                  className="mb-1 block text-xs font-medium text-zinc-600"
-                >
-                  Subcategoría
-                </label>
-                <select
-                  id="filter-subcategory"
-                  value={subcategoryFilter}
-                  onChange={(event) => setSubcategoryFilter(event.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                >
-                  <option value="">Todas</option>
-                  {subcategoryOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="filter-color"
-                  className="mb-1 block text-xs font-medium text-zinc-600"
-                >
-                  Color
-                </label>
-                <select
-                  id="filter-color"
-                  value={colorFilter}
-                  onChange={(event) => setColorFilter(event.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                >
-                  <option value="">Todos</option>
-                  {colorOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="filter-condition"
-                  className="mb-1 block text-xs font-medium text-zinc-600"
-                >
-                  Condición
-                </label>
-                <select
-                  id="filter-condition"
-                  value={conditionFilter}
-                  onChange={(event) => setConditionFilter(event.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                >
-                  <option value="">Todas</option>
-                  {conditionOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="filter-min-price"
-                  className="mb-1 block text-xs font-medium text-zinc-600"
-                >
-                  Precio mínimo
-                </label>
-                <input
-                  id="filter-min-price"
-                  type="number"
-                  min="0"
-                  value={minPriceFilter}
-                  onChange={(event) => setMinPriceFilter(event.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="filter-max-price"
-                  className="mb-1 block text-xs font-medium text-zinc-600"
-                >
-                  Precio máximo
-                </label>
-                <input
-                  id="filter-max-price"
-                  type="number"
-                  min="0"
-                  value={maxPriceFilter}
-                  onChange={(event) => setMaxPriceFilter(event.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="filter-catalog"
-                  className="mb-1 block text-xs font-medium text-zinc-600"
-                >
-                  Catálogo
-                </label>
-                <select
-                  id="filter-catalog"
-                  value={catalogFilter}
-                  onChange={(event) =>
-                    setCatalogFilter(event.target.value as "all" | "visible" | "hidden")
-                  }
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                >
-                  <option value="all">Todos</option>
-                  <option value="visible">Visible</option>
-                  <option value="hidden">Oculto</option>
-                </select>
-              </div>
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+                Filtros
+                {[
+                  referenceFilter,
+                  nameFilter,
+                  brandFilter,
+                  subcategoryFilter,
+                  colorFilter,
+                  conditionFilter,
+                  minPriceFilter,
+                  maxPriceFilter,
+                  catalogFilter !== "all" ? catalogFilter : "",
+                ].filter(Boolean).length > 0 ? (
+                  <span className="rounded-full bg-zinc-900 px-1.5 py-0.5 text-xs leading-none text-white">
+                    {
+                      [
+                        referenceFilter,
+                        nameFilter,
+                        brandFilter,
+                        subcategoryFilter,
+                        colorFilter,
+                        conditionFilter,
+                        minPriceFilter,
+                        maxPriceFilter,
+                        catalogFilter !== "all" ? catalogFilter : "",
+                      ].filter(Boolean).length
+                    }
+                  </span>
+                ) : null}
+              </button>
             </div>
+
+            {filtersOpen ? (
+              <div className="border-t border-zinc-100 p-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div>
+                    <label
+                      htmlFor="filter-reference"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      Ref.
+                    </label>
+                    <input
+                      id="filter-reference"
+                      type="text"
+                      value={referenceFilter}
+                      onChange={(event) => setReferenceFilter(event.target.value)}
+                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="filter-name"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      Nombre
+                    </label>
+                    <input
+                      id="filter-name"
+                      type="text"
+                      value={nameFilter}
+                      onChange={(event) => setNameFilter(event.target.value)}
+                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="filter-brand"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      Marca
+                    </label>
+                    <select
+                      id="filter-brand"
+                      value={brandFilter}
+                      onChange={(event) => setBrandFilter(event.target.value)}
+                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                    >
+                      <option value="">Todas</option>
+                      {brandOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="filter-subcategory"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      Subcategoría
+                    </label>
+                    <select
+                      id="filter-subcategory"
+                      value={subcategoryFilter}
+                      onChange={(event) => setSubcategoryFilter(event.target.value)}
+                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                    >
+                      <option value="">Todas</option>
+                      {subcategoryOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="filter-color"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      Color
+                    </label>
+                    <select
+                      id="filter-color"
+                      value={colorFilter}
+                      onChange={(event) => setColorFilter(event.target.value)}
+                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                    >
+                      <option value="">Todos</option>
+                      {colorOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="filter-condition"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      Condición
+                    </label>
+                    <select
+                      id="filter-condition"
+                      value={conditionFilter}
+                      onChange={(event) => setConditionFilter(event.target.value)}
+                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                    >
+                      <option value="">Todas</option>
+                      {conditionOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="filter-min-price"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      Precio mínimo
+                    </label>
+                    <input
+                      id="filter-min-price"
+                      type="number"
+                      min="0"
+                      value={minPriceFilter}
+                      onChange={(event) => setMinPriceFilter(event.target.value)}
+                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="filter-max-price"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      Precio máximo
+                    </label>
+                    <input
+                      id="filter-max-price"
+                      type="number"
+                      min="0"
+                      value={maxPriceFilter}
+                      onChange={(event) => setMaxPriceFilter(event.target.value)}
+                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="filter-catalog"
+                      className="mb-1 block text-xs font-medium text-zinc-600"
+                    >
+                      Catálogo
+                    </label>
+                    <select
+                      id="filter-catalog"
+                      value={catalogFilter}
+                      onChange={(event) =>
+                        setCatalogFilter(event.target.value as "all" | "visible" | "hidden")
+                      }
+                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                    >
+                      <option value="all">Todos</option>
+                      <option value="visible">Visible</option>
+                      <option value="hidden">Oculto</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </section>
 
           <ProductsTable products={paginated} />

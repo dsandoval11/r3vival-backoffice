@@ -18,6 +18,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "R3vival Backoffice",
   description: "Internal admin panel for R3vival store management",
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export default function RootLayout({
