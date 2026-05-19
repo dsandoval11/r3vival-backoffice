@@ -1,5 +1,4 @@
 import { deleteAllProductImages } from "@/lib/services/product-images";
-import { fetchProductLookups } from "@/lib/services/reference-data";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Id, Product, ProductFormValues, ProductListItem } from "@/lib/types";
 import { parsePrice, requireId, requireString } from "@/lib/utils/validation";
@@ -18,28 +17,18 @@ export const EMPTY_PRODUCT_FORM_VALUES: ProductFormValues = {
   exit_date: "",
   description: "",
   measurements: "",
+  size: "",
 };
 
 async function generateReferenceCode(): Promise<string> {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from("products")
-    .select("reference_code")
-    .not("reference_code", "is", null);
+  const { data, error } = await supabase.rpc("next_reference_code");
 
   if (error) {
     throw new Error(error.message);
   }
 
-  let maxNumber = 0;
-  for (const row of data ?? []) {
-    const num = parseInt(row.reference_code as string, 10);
-    if (!isNaN(num) && num > maxNumber) {
-      maxNumber = num;
-    }
-  }
-
-  return String(maxNumber + 1).padStart(4, "0");
+  return data as string;
 }
 
 export interface ProductFilters {
@@ -55,6 +44,45 @@ export interface ProductFilters {
   maxPrice?: number | null;
 }
 
+interface NameRef {
+  name: string;
+}
+
+interface ProductRowWithJoins {
+  id: number | string;
+  name: string;
+  sale_price: number;
+  reference_code: string | null;
+  measurements: string | null;
+  is_visible: boolean;
+  brand: NameRef | NameRef[] | null;
+  subcategory: NameRef | NameRef[] | null;
+  color: NameRef | NameRef[] | null;
+  condition: NameRef | NameRef[] | null;
+  product_size: Array<{ size: NameRef | NameRef[] | null }> | null;
+}
+
+function pickName(value: NameRef | NameRef[] | null | undefined): string {
+  if (!value) return "-";
+  if (Array.isArray(value)) return value[0]?.name ?? "-";
+  return value.name ?? "-";
+}
+
+function hasActiveFilters(filters: ProductFilters): boolean {
+  return Boolean(
+    filters.search ||
+      filters.reference ||
+      filters.name ||
+      filters.brand_id ||
+      filters.subcategory_id ||
+      filters.color_id ||
+      filters.condition_id ||
+      filters.catalog ||
+      filters.minPrice != null ||
+      filters.maxPrice != null,
+  );
+}
+
 export async function fetchProducts(
   page = 1,
   pageSize = 25,
@@ -62,29 +90,25 @@ export async function fetchProducts(
 ): Promise<{ items: ProductListItem[]; total: number }> {
   const supabase = getSupabaseClient();
 
-  let catalogIds: string[] | null = null;
-  if (filters.catalog) {
-    const { data: catalogRows, error: catalogError } = await supabase
-      .from("catalog")
-      .select("product_id");
-    if (catalogError) throw new Error(catalogError.message);
-    catalogIds = (catalogRows ?? []).map((r) => r.product_id as string);
-  }
-
-  if (filters.catalog === "visible" && catalogIds?.length === 0) {
-    return { items: [], total: 0 };
-  }
-
   let query = supabase
     .from("products")
     .select(
-      "id,name,sale_price,brand_id,subcategory_id,color_id,condition_id,reference_code,measurements",
-      { count: "exact" },
+      `
+        id,name,sale_price,reference_code,measurements,is_visible,
+        brand:brands(name),
+        subcategory:subcategories(name),
+        color:colors(name),
+        condition:conditions(name),
+        product_size(size:sizes(size))
+      `,
+      { count: hasActiveFilters(filters) ? "exact" : "estimated" },
     )
     .order("reference_code", { ascending: true, nullsFirst: false });
 
   if (filters.search) {
-    query = query.or(`name.ilike.%${filters.search}%,reference_code.ilike.%${filters.search}%`);
+    query = query.or(
+      `name.ilike.%${filters.search}%,reference_code.ilike.%${filters.search}%`,
+    );
   }
   if (filters.reference) query = query.ilike("reference_code", `%${filters.reference}%`);
   if (filters.name) query = query.ilike("name", `%${filters.name}%`);
@@ -94,12 +118,8 @@ export async function fetchProducts(
   if (filters.condition_id) query = query.eq("condition_id", filters.condition_id);
   if (filters.minPrice != null) query = query.gte("sale_price", filters.minPrice);
   if (filters.maxPrice != null) query = query.lte("sale_price", filters.maxPrice);
-
-  if (filters.catalog === "visible" && catalogIds!.length > 0) {
-    query = query.in("id", catalogIds!);
-  } else if (filters.catalog === "hidden" && catalogIds!.length > 0) {
-    query = query.not("id", "in", `(${catalogIds!.join(",")})`);
-  }
+  if (filters.catalog === "visible") query = query.eq("is_visible", true);
+  if (filters.catalog === "hidden") query = query.eq("is_visible", false);
 
   const from = (page - 1) * pageSize;
   query = query.range(from, from + pageSize - 1);
@@ -107,56 +127,31 @@ export async function fetchProducts(
   const { data, error, count } = await query;
   if (error) throw new Error(error.message);
 
-  const products = (data ?? []) as Product[];
-  const productIds = products.map((p) => p.id);
-
-  if (productIds.length === 0) {
-    return { items: [], total: count ?? 0 };
-  }
-
-  const [lookups, catalogForPage, sizesForPage] = await Promise.all([
-    fetchProductLookups(),
-    supabase.from("catalog").select("product_id").in("product_id", productIds),
-    supabase.from("product_size").select("product_id,size_id").in("product_id", productIds),
-  ]);
-
-  if (catalogForPage.error) throw new Error(catalogForPage.error.message);
-  if (sizesForPage.error) throw new Error(sizesForPage.error.message);
-
-  const brandNameById = new Map(lookups.brands.map((b) => [b.id, b.name]));
-  const subcategoryNameById = new Map(lookups.subcategories.map((s) => [s.id, s.name]));
-  const colorNameById = new Map(lookups.colors.map((c) => [c.id, c.name]));
-  const conditionNameById = new Map(lookups.conditions.map((c) => [c.id, c.name]));
-  const sizeNameById = new Map(lookups.sizes.map((s) => [s.id, s.name]));
-
-  const catalogProductIds = new Set((catalogForPage.data ?? []).map((r) => r.product_id));
-
-  const sizeNamesByProductId = new Map<string, string[]>();
-  for (const row of (sizesForPage.data ?? []) as Array<{ product_id: string; size_id: string }>) {
-    const sizeName = sizeNameById.get(row.size_id);
-    if (!sizeName) continue;
-    const current = sizeNamesByProductId.get(row.product_id);
-    if (current) {
-      current.push(sizeName);
-    } else {
-      sizeNamesByProductId.set(row.product_id, [sizeName]);
-    }
-  }
+  const rows = (data ?? []) as unknown as ProductRowWithJoins[];
 
   return {
-    items: products.map((product) => ({
-      id: product.id,
-      name: product.name,
-      price: Number(product.sale_price),
-      measurements: product.measurements ?? "",
-      sizeNames: sizeNamesByProductId.get(product.id) ?? [],
-      brandName: brandNameById.get(product.brand_id) ?? "-",
-      subcategoryName: subcategoryNameById.get(product.subcategory_id) ?? "-",
-      colorName: colorNameById.get(product.color_id) ?? "-",
-      conditionName: conditionNameById.get(product.condition_id) ?? "-",
-      visibleInCatalog: catalogProductIds.has(product.id),
-      referenceCode: product.reference_code ?? "-",
-    })) as ProductListItem[],
+    items: rows.map((row) => {
+      const sizeNames = (row.product_size ?? [])
+        .map((ps) => {
+          const size = Array.isArray(ps.size) ? ps.size[0] : ps.size;
+          return size?.name;
+        })
+        .filter((n): n is string => Boolean(n));
+
+      return {
+        id: String(row.id),
+        name: row.name,
+        price: Number(row.sale_price),
+        measurements: row.measurements ?? "",
+        sizeNames,
+        brandName: pickName(row.brand),
+        subcategoryName: pickName(row.subcategory),
+        colorName: pickName(row.color),
+        conditionName: pickName(row.condition),
+        visibleInCatalog: row.is_visible,
+        referenceCode: row.reference_code ?? "-",
+      } as ProductListItem;
+    }),
     total: count ?? 0,
   };
 }
@@ -170,25 +165,22 @@ export async function fetchProductById(productId: Id): Promise<{
   const supabase = getSupabaseClient();
   const [
     { data: product, error: productError },
-    { data: catalogRows, error: catalogError },
     { data: sizeRows, error: sizesError },
   ] = await Promise.all([
     supabase
       .from("products")
       .select(
-        "id,name,sale_price,brand_id,subcategory_id,color_id,condition_id,purchase_price,entry_date,exit_date,description,measurements,reference_code",
+        "id,name,sale_price,brand_id,subcategory_id,color_id,condition_id,purchase_price,entry_date,exit_date,description,measurements,size,reference_code,is_visible",
       )
       .eq("id", productId)
       .single(),
-    supabase.from("catalog").select("product_id").eq("product_id", productId).limit(1),
     supabase.from("product_size").select("size_id").eq("product_id", productId),
   ]);
 
   if (productError) throw new Error(productError.message);
-  if (catalogError) throw new Error(catalogError.message);
   if (sizesError) throw new Error(sizesError.message);
 
-  const productRow = product as Product;
+  const productRow = product as Product & { is_visible: boolean };
 
   return {
     values: {
@@ -198,7 +190,7 @@ export async function fetchProductById(productId: Id): Promise<{
       subcategory_id: productRow.subcategory_id,
       color_id: productRow.color_id,
       condition_id: productRow.condition_id,
-      visibleInCatalog: (catalogRows ?? []).length > 0,
+      visibleInCatalog: productRow.is_visible,
       size_ids: (sizeRows ?? []).map((r: { size_id: string }) => r.size_id),
       purchase_price:
         productRow.purchase_price != null ? String(productRow.purchase_price) : "",
@@ -206,6 +198,7 @@ export async function fetchProductById(productId: Id): Promise<{
       exit_date: productRow.exit_date ?? "",
       description: productRow.description ?? "",
       measurements: productRow.measurements ?? "",
+      size: productRow.size ?? "",
     },
     referenceCode: productRow.reference_code ?? null,
   };
@@ -215,22 +208,11 @@ async function setCatalogVisibility(productId: Id, visibleInCatalog: boolean) {
   const supabase = getSupabaseClient();
 
   if (visibleInCatalog) {
-    const { data: existingRows, error: existingError } = await supabase
+    const { error: upsertError } = await supabase
       .from("catalog")
-      .select("product_id")
-      .eq("product_id", productId)
-      .limit(1);
+      .upsert({ product_id: productId }, { onConflict: "product_id" });
 
-    if (existingError) throw new Error(existingError.message);
-
-    if ((existingRows ?? []).length === 0) {
-      const { error: insertError } = await supabase
-        .from("catalog")
-        .insert({ product_id: productId });
-
-      if (insertError) throw new Error(insertError.message);
-    }
-
+    if (upsertError) throw new Error(upsertError.message);
     return;
   }
 
@@ -282,6 +264,7 @@ export async function saveProduct(values: ProductFormValues, productId?: Id) {
     exit_date: values.exit_date || null,
     description: values.description.trim() || null,
     measurements: values.measurements.trim() || null,
+    size: values.size.trim() || null,
   };
 
   let savedProductId = productId;

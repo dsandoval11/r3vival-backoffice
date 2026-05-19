@@ -49,8 +49,8 @@ export function ProductImagesManager({ productId }: ProductImagesManagerProps) {
     try {
       setUploading(true);
       setError(null);
-      await uploadProductImages(productId, Array.from(files));
-      await loadImages();
+      const newRows = await uploadProductImages(productId, Array.from(files));
+      setImages((prev) => [...prev, ...newRows].sort((a, b) => Number(b.is_cover) - Number(a.is_cover)));
     } catch (uploadError) {
       console.error(uploadError);
       setError(
@@ -62,12 +62,18 @@ export function ProductImagesManager({ productId }: ProductImagesManagerProps) {
   }
 
   async function handleSetCover(imageId: string) {
+    const previous = images;
+    setImages((prev) =>
+      prev
+        .map((img) => ({ ...img, is_cover: img.id === imageId }))
+        .sort((a, b) => Number(b.is_cover) - Number(a.is_cover)),
+    );
     try {
       setError(null);
       await setProductCoverImage(productId, imageId);
-      await loadImages();
     } catch (coverError) {
       console.error(coverError);
+      setImages(previous);
       setError(
         coverError instanceof Error ? coverError.message : "Failed to update cover image.",
       );
@@ -80,16 +86,30 @@ export function ProductImagesManager({ productId }: ProductImagesManagerProps) {
       return;
     }
 
+    const previous = images;
+    setImages((prev) => {
+      const next = prev.filter((img) => img.id !== image.id);
+      if (image.is_cover && next.length > 0 && !next.some((i) => i.is_cover)) {
+        next[0] = { ...next[0], is_cover: true };
+      }
+      return next;
+    });
     try {
       setError(null);
       await deleteProductImage(image);
-      await loadImages();
     } catch (deleteError) {
       console.error(deleteError);
+      setImages(previous);
       setError(
         deleteError instanceof Error ? deleteError.message : "Failed to delete image.",
       );
     }
+  }
+
+  function thumbUrl(url: string): string {
+    return url.includes("/upload/")
+      ? url.replace("/upload/", "/upload/w_400,h_400,c_fill,q_auto,f_auto/")
+      : url;
   }
 
   return (
@@ -130,8 +150,9 @@ export function ProductImagesManager({ productId }: ProductImagesManagerProps) {
               className="overflow-hidden rounded-md border border-zinc-200 bg-zinc-50"
             >
               <img
-                src={image.image_url}
+                src={thumbUrl(image.image_url)}
                 alt="Product"
+                loading="lazy"
                 className="h-40 w-full object-cover"
               />
               <div className="space-y-2 p-3">

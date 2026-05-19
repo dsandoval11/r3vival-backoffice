@@ -1,3 +1,4 @@
+import { invalidateProductLookups } from "@/lib/services/reference-data";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Category, Id, NamedEntity, Subcategory } from "@/lib/types";
 import { requireId, requireString } from "@/lib/utils/validation";
@@ -9,7 +10,6 @@ export type SimpleEntityTable =
   | "conditions"
   | "sizes";
 
-// Tables where the display column is not called "name"
 const NAME_COLUMN: Partial<Record<SimpleEntityTable, string>> = {
   sizes: "size",
 };
@@ -18,28 +18,13 @@ function nameCol(table: SimpleEntityTable): string {
   return NAME_COLUMN[table] ?? "name";
 }
 
-async function ensureSimpleNameUnique(
-  table: SimpleEntityTable,
-  name: string,
-  currentId?: Id,
-) {
-  const supabase = getSupabaseClient();
-  const trimmedName = name.trim();
-  const col = nameCol(table);
-
-  const { data, error } = await supabase
-    .from(table)
-    .select("id")
-    .ilike(col, trimmedName)
-    .limit(1);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  if (data.length > 0 && data[0].id !== currentId) {
-    throw new Error(`${trimmedName} ya existe.`);
-  }
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "23505"
+  );
 }
 
 export async function listSimpleEntities(table: SimpleEntityTable) {
@@ -56,7 +41,6 @@ export async function listSimpleEntities(table: SimpleEntityTable) {
     throw new Error(error.message);
   }
 
-  // Normalize to NamedEntity shape
   return (data as unknown as Record<string, string>[]).map((row) => ({
     id: row.id,
     name: row[col] ?? row.name,
@@ -84,15 +68,19 @@ export async function getSimpleEntityById(table: SimpleEntityTable, id: Id) {
 
 export async function createSimpleEntity(table: SimpleEntityTable, name: string) {
   requireString(name, "Nombre");
-  await ensureSimpleNameUnique(table, name);
 
   const supabase = getSupabaseClient();
   const col = nameCol(table);
   const { error } = await supabase.from(table).insert({ [col]: name.trim() });
 
   if (error) {
+    if (isUniqueViolation(error)) {
+      throw new Error(`${name.trim()} ya existe.`);
+    }
     throw new Error(error.message);
   }
+
+  invalidateProductLookups();
 }
 
 export async function updateSimpleEntity(
@@ -102,7 +90,6 @@ export async function updateSimpleEntity(
 ) {
   requireId(id, "Registro");
   requireString(name, "Nombre");
-  await ensureSimpleNameUnique(table, name, id);
 
   const supabase = getSupabaseClient();
   const col = nameCol(table);
@@ -112,8 +99,13 @@ export async function updateSimpleEntity(
     .eq("id", id);
 
   if (error) {
+    if (isUniqueViolation(error)) {
+      throw new Error(`${name.trim()} ya existe.`);
+    }
     throw new Error(error.message);
   }
+
+  invalidateProductLookups();
 }
 
 export async function deleteSimpleEntity(table: SimpleEntityTable, id: Id) {
@@ -123,68 +115,32 @@ export async function deleteSimpleEntity(table: SimpleEntityTable, id: Id) {
   if (error) {
     throw new Error(error.message);
   }
+
+  invalidateProductLookups();
 }
 
-async function ensureSubcategoryNameUnique(
-  name: string,
-  categoryId: Id,
-  currentId?: Id,
-) {
+export async function listSubcategories() {
   const supabase = getSupabaseClient();
-  const trimmedName = name.trim();
-
   const { data, error } = await supabase
     .from("subcategories")
-    .select("id")
-    .eq("category_id", categoryId)
-    .ilike("name", trimmedName)
-    .limit(1);
+    .select("id,name,category_id,category:categories(name)")
+    .order("name", { ascending: true });
 
   if (error) {
     throw new Error(error.message);
   }
 
-  if (data.length > 0 && data[0].id !== currentId) {
-    throw new Error(`${trimmedName} ya existe para la categoría seleccionada.`);
-  }
-}
+  type Row = Subcategory & { category: { name: string } | { name: string }[] | null };
 
-export async function listSubcategories() {
-  const [subcategories, categories] = await Promise.all([
-    (async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from("subcategories")
-        .select("id,name,category_id")
-        .order("name", { ascending: true });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      return data as Subcategory[];
-    })(),
-    (async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from("categories")
-        .select("id,name")
-        .order("name", { ascending: true });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      return data as Category[];
-    })(),
-  ]);
-
-  const categoryById = new Map(categories.map((category) => [category.id, category]));
-
-  return subcategories.map((subcategory) => ({
-    ...subcategory,
-    category_name: categoryById.get(subcategory.category_id)?.name ?? "-",
-  }));
+  return (data as unknown as Row[]).map((row) => {
+    const category = Array.isArray(row.category) ? row.category[0] : row.category;
+    return {
+      id: row.id,
+      name: row.name,
+      category_id: row.category_id,
+      category_name: category?.name ?? "-",
+    } as Subcategory;
+  });
 }
 
 export async function getSubcategoryById(id: Id) {
@@ -206,7 +162,6 @@ export async function getSubcategoryById(id: Id) {
 export async function createSubcategory(name: string, categoryId: Id) {
   requireString(name, "Nombre");
   requireId(categoryId, "Categoría");
-  await ensureSubcategoryNameUnique(name, categoryId);
 
   const supabase = getSupabaseClient();
   const { error } = await supabase.from("subcategories").insert({
@@ -215,8 +170,13 @@ export async function createSubcategory(name: string, categoryId: Id) {
   });
 
   if (error) {
+    if (isUniqueViolation(error)) {
+      throw new Error(`${name.trim()} ya existe para la categoría seleccionada.`);
+    }
     throw new Error(error.message);
   }
+
+  invalidateProductLookups();
 }
 
 export async function updateSubcategory(
@@ -227,7 +187,6 @@ export async function updateSubcategory(
   requireId(id, "Subcategoría");
   requireString(name, "Nombre");
   requireId(categoryId, "Categoría");
-  await ensureSubcategoryNameUnique(name, categoryId, id);
 
   const supabase = getSupabaseClient();
   const { error } = await supabase
@@ -239,8 +198,13 @@ export async function updateSubcategory(
     .eq("id", id);
 
   if (error) {
+    if (isUniqueViolation(error)) {
+      throw new Error(`${name.trim()} ya existe para la categoría seleccionada.`);
+    }
     throw new Error(error.message);
   }
+
+  invalidateProductLookups();
 }
 
 export async function deleteSubcategory(id: Id) {
@@ -250,4 +214,9 @@ export async function deleteSubcategory(id: Id) {
   if (error) {
     throw new Error(error.message);
   }
+
+  invalidateProductLookups();
 }
+
+// Kept for backwards compatibility — Category type currently only uses category names from cache.
+export type { Category };

@@ -304,6 +304,8 @@ export function ProductForm({ productId }: ProductFormProps) {
         </FormField>
 
         {/* Sizes */}
+        <div className="grid gap-4 md:grid-cols-2">
+
         {lookups.sizes.length > 0 ? (
           <div>
             <p className="mb-2 text-sm font-medium text-zinc-700">Tallas</p>
@@ -332,6 +334,18 @@ export function ProductForm({ productId }: ProductFormProps) {
             </div>
           </div>
         ) : null}
+
+          <FormField htmlFor="size" label="Talla etiqueta">
+            <input
+              id="size"
+              type="text"
+              value={formValues.size}
+              onChange={(event) => updateField("size", event.target.value)}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+              placeholder="Ej: M, 42, XL"
+            />
+          </FormField>
+        </div>
 
         {/* Catalog visibility */}
         <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">

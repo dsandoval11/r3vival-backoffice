@@ -26,6 +26,7 @@ export interface Product {
   exit_date?: string | null;
   description?: string | null;
   measurements?: string | null;
+  size?: string | null;
   reference_code?: string | null;
 }
 
@@ -57,6 +58,7 @@ export interface ProductFormValues {
   exit_date: string;
   description: string;
   measurements: string;
+  size: string;
 }
 
 export interface ProductImage {

@@ -66,58 +66,64 @@ export async function uploadProductImages(productId: Id, files: File[]) {
   }
 
   const supabase = getSupabaseClient();
-  const currentImages = await fetchProductImages(productId);
-  const hasCoverImage = currentImages.some((image) => image.is_cover);
-  const uploadedRows: ProductImage[] = [];
 
   const folder = `r3vival/products/${productId}`;
-  const { signature, timestamp, apiKey, cloudName } =
-    await getCloudinarySignature(folder);
+  const [{ signature, timestamp, apiKey, cloudName }, existingCover] =
+    await Promise.all([
+      getCloudinarySignature(folder),
+      supabase
+        .from("product_images")
+        .select("id")
+        .eq("product_id", productId)
+        .eq("is_cover", true)
+        .limit(1),
+    ]);
 
-  for (let index = 0; index < files.length; index += 1) {
-    const file = await processImageForUpload(files[index]);
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("api_key", apiKey);
-    formData.append("timestamp", String(timestamp));
-    formData.append("signature", signature);
-    formData.append("folder", folder);
+  const hasCoverImage = (existingCover.data ?? []).length > 0;
 
-    const uploadRes = await fetch(
-      `${CLOUDINARY_UPLOAD_BASE}/${cloudName}/image/upload`,
-      { method: "POST", body: formData },
-    );
+  const uploads = await Promise.all(
+    files.map(async (rawFile) => {
+      const file = await processImageForUpload(rawFile);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("api_key", apiKey);
+      formData.append("timestamp", String(timestamp));
+      formData.append("signature", signature);
+      formData.append("folder", folder);
 
-    if (!uploadRes.ok) {
-      throw new Error(`Cloudinary upload failed: ${uploadRes.statusText}`);
-    }
+      const uploadRes = await fetch(
+        `${CLOUDINARY_UPLOAD_BASE}/${cloudName}/image/upload`,
+        { method: "POST", body: formData },
+      );
 
-    const { secure_url, public_id } = (await uploadRes.json()) as {
-      secure_url: string;
-      public_id: string;
-    };
+      if (!uploadRes.ok) {
+        throw new Error(`Cloudinary upload failed: ${uploadRes.statusText}`);
+      }
 
-    const shouldBeCover = !hasCoverImage && index === 0;
+      return (await uploadRes.json()) as {
+        secure_url: string;
+        public_id: string;
+      };
+    }),
+  );
 
-    const { data, error } = await supabase
-      .from("product_images")
-      .insert({
-        product_id: productId,
-        image_url: secure_url,
-        cloudinary_public_id: public_id,
-        is_cover: shouldBeCover,
-      })
-      .select("id,product_id,image_url,is_cover,cloudinary_public_id")
-      .single();
+  const insertRows = uploads.map((u, index) => ({
+    product_id: productId,
+    image_url: u.secure_url,
+    cloudinary_public_id: u.public_id,
+    is_cover: !hasCoverImage && index === 0,
+  }));
 
-    if (error) {
-      throw new Error(error.message);
-    }
+  const { data, error } = await supabase
+    .from("product_images")
+    .insert(insertRows)
+    .select("id,product_id,image_url,is_cover,cloudinary_public_id");
 
-    uploadedRows.push(data as ProductImage);
+  if (error) {
+    throw new Error(error.message);
   }
 
-  return uploadedRows;
+  return data as ProductImage[];
 }
 
 export async function setProductCoverImage(productId: Id, imageId: Id) {
@@ -126,23 +132,13 @@ export async function setProductCoverImage(productId: Id, imageId: Id) {
 
   const supabase = getSupabaseClient();
 
-  const { error: resetCoverError } = await supabase
-    .from("product_images")
-    .update({ is_cover: false })
-    .eq("product_id", productId);
+  const { error } = await supabase.rpc("set_cover_image", {
+    p_product: productId,
+    p_image: imageId,
+  });
 
-  if (resetCoverError) {
-    throw new Error(resetCoverError.message);
-  }
-
-  const { error: setCoverError } = await supabase
-    .from("product_images")
-    .update({ is_cover: true })
-    .eq("id", imageId)
-    .eq("product_id", productId);
-
-  if (setCoverError) {
-    throw new Error(setCoverError.message);
+  if (error) {
+    throw new Error(error.message);
   }
 }
 
@@ -179,10 +175,20 @@ export async function deleteProductImage(image: ProductImage) {
   }
 
   if (image.is_cover) {
-    const remainingImages = await fetchProductImages(image.product_id);
+    const supabase2 = getSupabaseClient();
+    const { data: nextRows, error: nextError } = await supabase2
+      .from("product_images")
+      .select("id")
+      .eq("product_id", image.product_id)
+      .limit(1);
 
-    if (remainingImages.length > 0) {
-      await setProductCoverImage(image.product_id, remainingImages[0].id);
+    if (nextError) {
+      throw new Error(nextError.message);
+    }
+
+    const nextId = (nextRows ?? [])[0]?.id;
+    if (nextId) {
+      await setProductCoverImage(image.product_id, nextId);
     }
   }
 }
