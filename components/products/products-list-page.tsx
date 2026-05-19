@@ -9,6 +9,23 @@ import { fetchProductLookups } from "@/lib/services/reference-data";
 import type { NamedEntity, ProductListItem } from "@/lib/types";
 
 const PAGE_SIZE = 25;
+const FILTERS_STORAGE_KEY = "productsListFilters";
+
+type CatalogFilter = "all" | "visible" | "hidden";
+
+type StoredFilters = {
+  search: string;
+  reference: string;
+  name: string;
+  brandId: string;
+  subcategoryId: string;
+  colorId: string;
+  conditionId: string;
+  catalog: CatalogFilter;
+  minPrice: string;
+  maxPrice: string;
+  page: number;
+};
 
 function parsePriceFilter(value: string): number | null {
   if (!value.trim()) return null;
@@ -16,31 +33,59 @@ function parsePriceFilter(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function loadStoredFilters(): Partial<StoredFilters> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.sessionStorage.getItem(FILTERS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<StoredFilters>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function ProductsListPage() {
+  const stored = useRef<Partial<StoredFilters>>(loadStoredFilters()).current;
+
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(
+    typeof stored.page === "number" && stored.page > 0 ? stored.page : 1,
+  );
 
-  const [search, setSearch] = useState("");
-  const [referenceFilter, setReferenceFilter] = useState("");
-  const [nameFilter, setNameFilter] = useState("");
-  const [brandIdFilter, setBrandIdFilter] = useState("");
-  const [subcategoryIdFilter, setSubcategoryIdFilter] = useState("");
-  const [colorIdFilter, setColorIdFilter] = useState("");
-  const [conditionIdFilter, setConditionIdFilter] = useState("");
-  const [catalogFilter, setCatalogFilter] = useState<"all" | "visible" | "hidden">("all");
-  const [minPriceFilter, setMinPriceFilter] = useState("");
-  const [maxPriceFilter, setMaxPriceFilter] = useState("");
+  const [search, setSearch] = useState(stored.search ?? "");
+  const [referenceFilter, setReferenceFilter] = useState(stored.reference ?? "");
+  const [nameFilter, setNameFilter] = useState(stored.name ?? "");
+  const [brandIdFilter, setBrandIdFilter] = useState(stored.brandId ?? "");
+  const [subcategoryIdFilter, setSubcategoryIdFilter] = useState(stored.subcategoryId ?? "");
+  const [colorIdFilter, setColorIdFilter] = useState(stored.colorId ?? "");
+  const [conditionIdFilter, setConditionIdFilter] = useState(stored.conditionId ?? "");
+  const [catalogFilter, setCatalogFilter] = useState<CatalogFilter>(
+    stored.catalog === "visible" || stored.catalog === "hidden" ? stored.catalog : "all",
+  );
+  const [minPriceFilter, setMinPriceFilter] = useState(stored.minPrice ?? "");
+  const [maxPriceFilter, setMaxPriceFilter] = useState(stored.maxPrice ?? "");
+
+  const hasAdvancedFilters = Boolean(
+    stored.reference ||
+      stored.name ||
+      stored.brandId ||
+      stored.subcategoryId ||
+      stored.colorId ||
+      stored.conditionId ||
+      stored.minPrice ||
+      stored.maxPrice ||
+      (stored.catalog && stored.catalog !== "all"),
+  );
+  const [filtersOpen, setFiltersOpen] = useState(hasAdvancedFilters);
 
   const [debouncedTextFilters, setDebouncedTextFilters] = useState({
-    search: "",
-    reference: "",
-    name: "",
-    minPrice: "",
-    maxPrice: "",
+    search: stored.search ?? "",
+    reference: stored.reference ?? "",
+    name: stored.name ?? "",
+    minPrice: stored.minPrice ?? "",
+    maxPrice: stored.maxPrice ?? "",
   });
 
   const [brands, setBrands] = useState<NamedEntity[]>([]);
@@ -130,6 +175,36 @@ export function ProductsListPage() {
     colorIdFilter,
     conditionIdFilter,
     catalogFilter,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const payload: StoredFilters = {
+      search: debouncedTextFilters.search,
+      reference: debouncedTextFilters.reference,
+      name: debouncedTextFilters.name,
+      brandId: brandIdFilter,
+      subcategoryId: subcategoryIdFilter,
+      colorId: colorIdFilter,
+      conditionId: conditionIdFilter,
+      catalog: catalogFilter,
+      minPrice: debouncedTextFilters.minPrice,
+      maxPrice: debouncedTextFilters.maxPrice,
+      page: currentPage,
+    };
+    try {
+      window.sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore quota / disabled storage
+    }
+  }, [
+    debouncedTextFilters,
+    brandIdFilter,
+    subcategoryIdFilter,
+    colorIdFilter,
+    conditionIdFilter,
+    catalogFilter,
+    currentPage,
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));

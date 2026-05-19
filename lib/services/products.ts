@@ -44,6 +44,44 @@ export interface ProductFilters {
   maxPrice?: number | null;
 }
 
+const LIST_CACHE_TTL_MS = 60_000;
+const BY_ID_CACHE_TTL_MS = 60_000;
+
+type ListResult = { items: ProductListItem[]; total: number };
+type ByIdResult = { values: ProductFormValues; referenceCode: string | null };
+
+const listCache = new Map<string, { data: ListResult; expiresAt: number }>();
+const listInflight = new Map<string, Promise<ListResult>>();
+const byIdCache = new Map<string, { data: ByIdResult; expiresAt: number }>();
+const byIdInflight = new Map<string, Promise<ByIdResult>>();
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
+function listCacheKey(page: number, pageSize: number, filters: ProductFilters): string {
+  return stableStringify({ page, pageSize, filters });
+}
+
+export function invalidateProductsCache(): void {
+  listCache.clear();
+  listInflight.clear();
+  byIdCache.clear();
+  byIdInflight.clear();
+}
+
+function invalidateProductById(productId: Id): void {
+  byIdCache.delete(String(productId));
+  byIdInflight.delete(String(productId));
+  listCache.clear();
+  listInflight.clear();
+}
+
 interface NameRef {
   name: string;
 }
@@ -87,7 +125,31 @@ export async function fetchProducts(
   page = 1,
   pageSize = 25,
   filters: ProductFilters = {},
-): Promise<{ items: ProductListItem[]; total: number }> {
+): Promise<ListResult> {
+  const key = listCacheKey(page, pageSize, filters);
+  const cached = listCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
+
+  const existing = listInflight.get(key);
+  if (existing) return existing;
+
+  const promise = fetchProductsFromSupabase(page, pageSize, filters)
+    .then((result) => {
+      listCache.set(key, { data: result, expiresAt: Date.now() + LIST_CACHE_TTL_MS });
+      return result;
+    })
+    .finally(() => {
+      listInflight.delete(key);
+    });
+  listInflight.set(key, promise);
+  return promise;
+}
+
+async function fetchProductsFromSupabase(
+  page: number,
+  pageSize: number,
+  filters: ProductFilters,
+): Promise<ListResult> {
   const supabase = getSupabaseClient();
 
   let query = supabase
@@ -156,12 +218,29 @@ export async function fetchProducts(
   };
 }
 
-export async function fetchProductById(productId: Id): Promise<{
-  values: ProductFormValues;
-  referenceCode: string | null;
-}> {
+export async function fetchProductById(productId: Id): Promise<ByIdResult> {
   requireId(productId, "Producto");
 
+  const key = String(productId);
+  const cached = byIdCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
+
+  const existing = byIdInflight.get(key);
+  if (existing) return existing;
+
+  const promise = fetchProductByIdFromSupabase(productId)
+    .then((result) => {
+      byIdCache.set(key, { data: result, expiresAt: Date.now() + BY_ID_CACHE_TTL_MS });
+      return result;
+    })
+    .finally(() => {
+      byIdInflight.delete(key);
+    });
+  byIdInflight.set(key, promise);
+  return promise;
+}
+
+async function fetchProductByIdFromSupabase(productId: Id): Promise<ByIdResult> {
   const supabase = getSupabaseClient();
   const [
     { data: product, error: productError },
@@ -294,6 +373,8 @@ export async function saveProduct(values: ProductFormValues, productId?: Id) {
     saveProductSizes(savedProductId, values.size_ids),
   ]);
 
+  invalidateProductById(savedProductId);
+
   return savedProductId;
 }
 
@@ -316,4 +397,6 @@ export async function deleteProduct(productId: Id) {
     .eq("id", productId);
 
   if (deleteProductError) throw new Error(deleteProductError.message);
+
+  invalidateProductById(productId);
 }

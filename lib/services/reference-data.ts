@@ -1,7 +1,7 @@
 import { listSimpleEntities, listSubcategories } from "@/lib/services/entities";
 import type { ProductLookups } from "@/lib/types";
 
-const CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 5 * 60_000;
 let cache: { data: ProductLookups; expiresAt: number } | null = null;
 let inflight: Promise<ProductLookups> | null = null;
 
